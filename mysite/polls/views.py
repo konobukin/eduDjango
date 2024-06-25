@@ -1,11 +1,56 @@
+import json
+
 from django.db.models import F
 from django.http import HttpResponseRedirect
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
 from django.views import generic
 from django.utils import timezone
+from django.contrib.auth.models import User
+from django.contrib import messages
+from django.contrib.auth import authenticate, login
+from django.http import JsonResponse
+from .forms import RegistrationForm
+import jwt
+import datetime
+from django.views.decorators.csrf import csrf_exempt
 
 from .models import Choice, Question
+
+SECRET_KEY = 'your_secret_key'
+
+@csrf_exempt
+def register(request):
+    if request.method == 'POST':
+        form = RegistrationForm(request.POST)
+        if form.is_valid():
+            name = form.cleaned_data['name']
+            surname = form.cleaned_data['surname']
+            username = form.cleaned_data['username']
+            password = form.cleaned_data['password']
+            user = User.objects.create_user(username=username, password=password, first_name=name, last_name=surname)
+            token = jwt.encode({'username': user.username, 'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=1)}, SECRET_KEY, algorithm='HS256')
+            return JsonResponse({'token': token})
+        else:
+            return JsonResponse({'errors': form.errors}, status=400)
+    else:
+        form = RegistrationForm()
+    return render(request, 'polls/register.html', {'form': form})
+
+@csrf_exempt
+def get_user_by_token(request):
+    token = request.headers.get('Authorization')
+    if token:
+        try:
+            decoded = jwt.decode(token, SECRET_KEY, algorithms=['HS256'])
+            username = decoded['username']
+            return JsonResponse({'username': username})
+        except jwt.ExpiredSignatureError:
+            return JsonResponse({'error': 'Token has expired'}, status=400)
+        except jwt.InvalidTokenError:
+            return JsonResponse({'error': 'Invalid token'}, status=400)
+    else:
+        return JsonResponse({'error': 'Token not provided'}, status=400)
 
 
 class IndexView(generic.ListView):
